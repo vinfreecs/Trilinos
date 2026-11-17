@@ -12,6 +12,11 @@
 
 #include <FROSch_AlgebraicOverlappingOperator_decl.hpp>
 
+#include <cstdlib>
+#include <fstream>
+#include <Xpetra_IO_decl.hpp>
+#include <Xpetra_IO_def.hpp>
+
 
 namespace FROSch {
 
@@ -36,6 +41,7 @@ namespace FROSch {
         } else {
             FROSCH_ASSERT(false,"FROSch::AlgebraicOverlappingOperator: Specify a valid strategy for adding layers.");
         }
+        if (const char* dumpDir = getenv("FROSCH_DUMP_DIR")) DumpDir_ = dumpDir;
     }
 
     template <class SC,class LO,class GO,class NO>
@@ -100,7 +106,34 @@ namespace FROSch {
         FROSCH_TIMER_START_LEVELID(computeTime,"AlgebraicOverlappingOperator::compute");
         FROSCH_ASSERT(this->IsInitialized_,"ERROR: AlgebraicOverlappingOperator has to be initialized before calling compute()");
         this->computeOverlappingOperator();
+        if (!DumpDir_.empty()) {
+            Xpetra::IO<SC,LO,GO,NO>::Write(DumpDir_ + "/local_rank" + to_string(this->MpiComm_->getRank()) + ".mtx",
+                                           *this->OverlappingMatrix_);
+        }
         return 0; // RETURN VALUE!!!
+    }
+
+    template <class SC,class LO,class GO,class NO>
+    void AlgebraicOverlappingOperator<SC,LO,GO,NO>::dumpMapGIDs(ConstXMapPtr map,
+                                                                const string& name) const
+    {
+        ofstream out(DumpDir_ + "/" + name + "_rank" + to_string(this->MpiComm_->getRank()) + ".txt");
+        ArrayView<const GO> gids = map->getLocalElementList();
+        for (LO i=0; i<(LO) gids.size(); i++) out << gids[i] << "\n";
+    }
+
+    template <class SC,class LO,class GO,class NO>
+    void AlgebraicOverlappingOperator<SC,LO,GO,NO>::dumpGraphRows(ConstXCrsGraphPtr graph,
+                                                                  const string& name) const
+    {
+        ofstream out(DumpDir_ + "/" + name + "_rank" + to_string(this->MpiComm_->getRank()) + ".txt");
+        for (LO i=0; i<(LO) graph->getLocalNumRows(); i++) {
+            ArrayView<const LO> indices;
+            graph->getLocalRowView(i,indices);
+            out << graph->getRowMap()->getGlobalElement(i);
+            for (LO j=0; j<(LO) indices.size(); j++) out << " " << graph->getColMap()->getGlobalElement(indices[j]);
+            out << "\n";
+        }
     }
 
     template <class SC,class LO,class GO,class NO>
@@ -186,6 +219,11 @@ namespace FROSch {
 
         // Adding Layers of Elements to the overlapping subdomains
         ConstXCrsGraphPtr overlappingGraph = this->OverlappingMatrix_->getCrsGraph();
+        ConstXMapPtr dumpStartMap = this->OverlappingMap_;
+        if (!DumpDir_.empty()) {
+            dumpGraphRows(this->K_->getCrsGraph(),"kgraph");
+            dumpMapGIDs(this->OverlappingMap_,"map_layer0");
+        }
         Array<LO> threadedLayerSizes;
         if (AddingLayersStrategy_==LayersThreaded) {
             this->OverlappingMap_ = (overlap>0) ? ExtendOverlapByLayers_Threaded(overlappingGraph,this->OverlappingMap_,overlap,threadedLayerSizes)
@@ -210,6 +248,14 @@ namespace FROSch {
 
                 default:
                     FROSCH_ASSERT(false,"FROSch::AlgebraicOverlappingOperator: Specify a valid strategy for adding layers.");
+            }
+            if (!DumpDir_.empty()) {
+                if (AddingLayersStrategy_==LayersThreaded) {
+                    Array<LO> sizes;
+                    dumpMapGIDs(ExtendOverlapByLayers_Threaded(overlappingGraph,dumpStartMap,i+1,sizes),"map_layer"+to_string(i+1));
+                } else {
+                    dumpMapGIDs(this->OverlappingMap_,"map_layer"+to_string(i+1));
+                }
             }
             if (verbosity==All) {
                 FROSCH_DETAILTIMER_START_LEVELID(printStatisticsTime,"print statistics");
@@ -266,6 +312,7 @@ namespace FROSch {
                     FROSCH_ASSERT(false,"FROSch::AlgebraicOverlappingOperator: Specify a valid strategy for adding layers.");
             }
         }
+        if (!DumpDir_.empty()) dumpMapGIDs(this->OverlappingMap_,"map_final");
 
         return 0;
     }

@@ -72,6 +72,11 @@ namespace FROSch {
         virtual void extractLocalSubdomainMatrix_Symbolic();
 
         AddingLayersStrategy AddingLayersStrategy_ = LayersFromGraph;
+
+        // Test-only dump (not for upstream): FROSCH_DUMP_DIR set = write maps, K's graph and the local matrix
+        void dumpMapGIDs(ConstXMapPtr map,const string& name) const;
+        void dumpGraphRows(ConstXCrsGraphPtr graph,const string& name) const;
+        string DumpDir_ = "";
     };
 
 }
