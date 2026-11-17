@@ -14,8 +14,7 @@
 
 #include <cstdlib>
 #include <fstream>
-#include <Xpetra_IO_decl.hpp>
-#include <Xpetra_IO_def.hpp>
+#include <iomanip>
 
 
 namespace FROSch {
@@ -107,8 +106,14 @@ namespace FROSch {
         FROSCH_ASSERT(this->IsInitialized_,"ERROR: AlgebraicOverlappingOperator has to be initialized before calling compute()");
         this->computeOverlappingOperator();
         if (!DumpDir_.empty()) {
-            Xpetra::IO<SC,LO,GO,NO>::Write(DumpDir_ + "/local_rank" + to_string(this->MpiComm_->getRank()) + ".mtx",
-                                           *this->OverlappingMatrix_);
+            ofstream out(DumpDir_ + "/local_rank" + to_string(this->MpiComm_->getRank()) + ".txt");
+            out << setprecision(17);
+            for (LO i=0; i<(LO) this->OverlappingMatrix_->getLocalNumRows(); i++) {
+                ArrayView<const LO> indices;
+                ArrayView<const SC> values;
+                this->OverlappingMatrix_->getLocalRowView(i,indices,values);
+                for (LO j=0; j<(LO) indices.size(); j++) out << i << " " << indices[j] << " " << values[j] << "\n";
+            }
         }
         return 0; // RETURN VALUE!!!
     }
